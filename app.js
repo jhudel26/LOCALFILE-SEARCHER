@@ -459,35 +459,6 @@ exportTemplateBtn.addEventListener('click', () => {
   log('Template exported (download)');
 });
 
-// --- Folder pickers (File System Access API) ---
-chooseSourceBtn.addEventListener('click', async () => {
-  try {
-    sourceHandle = await window.showDirectoryPicker();
-    sourceInfo.textContent = `Source: ${sourceHandle.name}`;
-    log(`Source folder selected: ${sourceHandle.name}`);
-  } catch (err) {
-    log('Source selection canceled.');
-  }
-});
-
-chooseDestBtn.addEventListener('click', async () => {
-  try {
-    destHandle = await window.showDirectoryPicker();
-    destInfo.textContent = `Destination: ${destHandle.name}`;
-    log(`Destination folder selected: ${destHandle.name}`);
-  } catch (err) {
-    log('Destination selection canceled.');
-  }
-});
-
-// --- Control buttons ---
-cancelBtn.addEventListener('click', () => {
-  cancelRequested = true;
-  setStatus('Cancelling...');
-  log('Cancel requested');
-});
-
-clearLogBtn.addEventListener('click', clearLog);
 
 // Download report button fallback
 downloadReportBtn.addEventListener('click', () => {
@@ -502,6 +473,68 @@ downloadReportBtn.addEventListener('click', () => {
   a.click();
   a.remove();
   log('Report downloaded (fallback)');
+});
+
+// --- Helper function to verify permissions ---
+async function verifyPermission(handle, readOnly = true) {
+  const options = { mode: readOnly ? 'read' : 'readwrite' };
+  
+  // Check if permission was already granted
+  if ((await handle.queryPermission(options)) === 'granted') {
+    return true;
+  }
+  
+  // Request permission
+  if ((await handle.requestPermission(options)) === 'granted') {
+    return true;
+  }
+  
+  return false;
+}
+
+// --- Folder selection handlers ---
+chooseSourceBtn.addEventListener('click', async () => {
+  try {
+    sourceHandle = await window.showDirectoryPicker({ mode: 'read' });
+    // Request permission to read the directory
+    if (await verifyPermission(sourceHandle, true)) {
+      sourceInfo.textContent = `Source: ${sourceHandle.name}`;
+      log(`Source folder selected: ${sourceHandle.name}`, 'success');
+      showNotification(`Source folder selected: ${sourceHandle.name}`, 'success');
+    } else {
+      sourceHandle = null;
+      log('Permission to access source folder was denied', 'error');
+      showNotification('Permission to access source folder was denied', 'error');
+    }
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      console.error('Source folder selection failed:', err);
+      log(`Failed to select source folder: ${err.message}`, 'error');
+      showNotification(`Failed to select source folder: ${err.message}`, 'error');
+    }
+  }
+});
+
+chooseDestBtn.addEventListener('click', async () => {
+  try {
+    destHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    // Request permission to read/write to the directory
+    if (await verifyPermission(destHandle, false)) {
+      destInfo.textContent = `Destination: ${destHandle.name}`;
+      log(`Destination folder selected: ${destHandle.name}`, 'success');
+      showNotification(`Destination folder selected: ${destHandle.name}`, 'success');
+    } else {
+      destHandle = null;
+      log('Permission to access destination folder was denied', 'error');
+      showNotification('Permission to access destination folder was denied', 'error');
+    }
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      console.error('Destination folder selection failed:', err);
+      log(`Failed to select destination folder: ${err.message}`, 'error');
+      showNotification(`Failed to select destination folder: ${err.message}`, 'error');
+    }
+  }
 });
 
 // --- Core search logic ---
