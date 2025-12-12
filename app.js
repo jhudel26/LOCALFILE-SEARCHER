@@ -1,10 +1,12 @@
 // app.js (module)
+// DOM Elements
 const templateInput = document.getElementById('templateFile');
 const dropArea = document.getElementById('dropArea');
 const templateLabel = document.getElementById('templateLabel');
 const templateInfo = document.getElementById('templateInfo');
 const previewWrap = document.getElementById('previewWrap');
 const previewList = document.getElementById('previewList');
+const termCount = document.getElementById('termCount');
 const clearTemplateBtn = document.getElementById('clearTemplate');
 const downloadSampleBtn = document.getElementById('downloadSample');
 const exportTemplateBtn = document.getElementById('exportTemplate');
@@ -20,90 +22,342 @@ const copyFilesToggle = document.getElementById('copyFilesToggle');
 const caseInsensitiveCheckbox = document.getElementById('caseInsensitive');
 
 const statusText = document.getElementById('status');
+const statusIndicator = document.getElementById('statusIndicator');
+const statusDot = document.querySelector('.status-dot');
 const progressBar = document.getElementById('progressBar');
 const progressText = document.getElementById('progressText');
+const progressInfo = document.getElementById('progressInfo');
 
 const logEl = document.getElementById('log');
 const logCount = document.getElementById('logCount');
 const clearLogBtn = document.getElementById('clearLog');
 const downloadReportBtn = document.getElementById('downloadReportBtn');
 
+// App state
 let sourceHandle = null;
 let destHandle = null;
 let templateWords = [];
 let cancelRequested = false;
 let lastReportBlobUrl = null;
 let lastReportName = null;
+let isProcessing = false;
 
-// pdf.js worker
+// Initialize PDF.js worker
 if (window.pdfjsLib) {
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.10.111/build/pdf.worker.min.js';
 }
 
 // --- UI Helpers ---
-function log(msg) {
+function log(msg, type = 'info') {
   const time = new Date().toLocaleTimeString();
-  const line = `[${time}] ${msg}`;
-  logEl.textContent += line + '\n';
+  const line = document.createElement('div');
+  line.className = `log-entry ${type}`;
+  
+  // Add icon based on message type
+  let icon = 'ℹ️';
+  if (type === 'success') icon = '✅';
+  else if (type === 'error') icon = '❌';
+  else if (type === 'warning') icon = '⚠️';
+  
+  line.textContent = `[${time}] ${icon} ${msg}`;
+  logEl.appendChild(line);
   logEl.scrollTop = logEl.scrollHeight;
-  logCount.textContent = `${logEl.textContent.split('\n').filter(Boolean).length} entries`;
+  
+  // Update log count
+  const entryCount = logEl.children.length;
+  logCount.textContent = `${entryCount} ${entryCount === 1 ? 'entry' : 'entries'}`;
+  
+  // Add visual feedback for errors
+  if (type === 'error') {
+    line.classList.add('text-red-500', 'dark:text-red-400');
+  } else if (type === 'success') {
+    line.classList.add('text-green-600', 'dark:text-green-400');
+  } else if (type === 'warning') {
+    line.classList.add('text-amber-600', 'dark:text-amber-400');
+  }
 }
 
 function clearLog() {
-  logEl.textContent = '';
+  logEl.innerHTML = '';
   logCount.textContent = '0 entries';
+  log('Log cleared', 'info');
 }
 
-function setStatus(s) {
-  statusText.textContent = s;
+function setStatus(status, type = 'info') {
+  statusText.textContent = status;
+  
+  // Update status dot
+  statusDot.className = 'status-dot';
+  if (type === 'processing') {
+    statusDot.classList.add('processing');
+    statusText.className = 'text-amber-500';
+  } else if (type === 'success') {
+    statusDot.classList.add('success');
+    statusText.className = 'text-green-500';
+  } else if (type === 'error') {
+    statusDot.classList.add('error');
+    statusText.className = 'text-red-500';
+  } else {
+    statusDot.classList.add('idle');
+    statusText.className = 'text-slate-500 dark:text-slate-400';
+  }
+  
+  // Update progress info
+  if (progressInfo) {
+    if (type === 'processing') {
+      progressInfo.textContent = 'Processing files...';
+    } else if (type === 'success') {
+      progressInfo.textContent = 'Search completed successfully';
+    } else if (type === 'error') {
+      progressInfo.textContent = 'An error occurred';
+    } else {
+      progressInfo.textContent = 'Ready to start searching';
+    }
+  }
 }
 
 function setProgress(done, total) {
   const pct = total === 0 ? 0 : Math.round((done / total) * 100);
-  progressBar.style.width = pct + '%';
-  progressText.textContent = `${done} / ${total}`;
+  progressBar.style.width = `${pct}%`;
+  progressText.textContent = `${done} / ${total} files`;
+  
+  // Update progress info with more details
+  if (progressInfo && total > 0) {
+    const remaining = total - done;
+    progressInfo.textContent = `Processed ${done} of ${total} files (${pct}%)`;
+    
+    // Add estimated time remaining if we have enough data
+    if (done > 5) {
+      const timePerFile = performance.now() / (done * 1000); // in seconds
+      const remainingTime = Math.round(timePerFile * remaining);
+      if (remainingTime > 0) {
+        const mins = Math.floor(remainingTime / 60);
+        const secs = Math.round(remainingTime % 60);
+        progressInfo.textContent += ` • ${mins > 0 ? `${mins}m ` : ''}${secs}s remaining`;
+      }
+    }
+  }
+}
+
+function showNotification(message, type = 'info') {
+  // Create notification element
+  const notification = document.createElement('div');
+  notification.className = `fixed top-4 right-4 p-4 rounded-lg shadow-lg z-50 transform transition-all duration-300 translate-x-0 opacity-100 ${
+    type === 'success' ? 'bg-green-100 text-green-800 dark:bg-green-900/80 dark:text-green-200' :
+    type === 'error' ? 'bg-red-100 text-red-800 dark:bg-red-900/80 dark:text-red-200' :
+    'bg-blue-100 text-blue-800 dark:bg-blue-900/80 dark:text-blue-200'
+  }`;
+  
+  notification.innerHTML = `
+    <div class="flex items-center">
+      <i class="${
+        type === 'success' ? 'fas fa-check-circle' :
+        type === 'error' ? 'fas fa-exclamation-circle' :
+        'fas fa-info-circle'
+      } mr-2"></i>
+      <span>${message}</span>
+      <button class="ml-4 text-current opacity-70 hover:opacity-100">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+  `;
+  
+  // Add click handler to dismiss
+  notification.querySelector('button').addEventListener('click', () => {
+    notification.classList.add('translate-x-full', 'opacity-0');
+    setTimeout(() => notification.remove(), 300);
+  });
+  
+  // Auto-dismiss after 5 seconds
+  document.body.appendChild(notification);
+  setTimeout(() => {
+    notification.classList.add('translate-x-full', 'opacity-0');
+    setTimeout(() => notification.remove(), 300);
+  }, 5000);
+}
+
+function setProcessingState(processing) {
+  isProcessing = processing;
+  
+  // Update UI based on processing state
+  startBtn.disabled = processing;
+  chooseSourceBtn.disabled = processing;
+  chooseDestBtn.disabled = processing;
+  downloadSampleBtn.disabled = processing;
+  exportTemplateBtn.disabled = processing || templateWords.length === 0;
+  
+  // Show/hide cancel button
+  cancelBtn.classList.toggle('hidden', !processing);
+  
+  // Update status
+  if (processing) {
+    setStatus('Processing...', 'processing');
+    log('Starting search operation...', 'info');
+  } else if (cancelRequested) {
+    setStatus('Cancelled', 'error');
+    log('Operation cancelled by user', 'warning');
+  } else {
+    setStatus('Ready', 'idle');
+  }
 }
 
 // --- Template handling ---
 async function loadXlsxFile(file) {
   try {
+    setProcessingState(true);
+    
+    // Show loading state
+    templateInfo.textContent = 'Loading template...';
+    templateLabel.textContent = file.name;
+    
     const ab = await file.arrayBuffer();
     const wb = XLSX.read(ab, { type: 'array' });
     const firstSheet = wb.SheetNames[0];
     const ws = wb.Sheets[firstSheet];
-    // read as array of arrays
+    
+    // Read as array of arrays and process
     const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-    templateWords = rows.map(r => (r[0] || '').toString().trim()).filter(Boolean);
-    templateInfo.textContent = `Loaded ${templateWords.length} search words from "${file.name}"`;
+    templateWords = [...new Set(rows.map(r => (r[0] || '').toString().trim()).filter(Boolean))];
+    
+    if (templateWords.length === 0) {
+      throw new Error('No valid search terms found in the first column');
+    }
+    
+    // Update UI
+    templateInfo.textContent = `Loaded ${templateWords.length} unique search terms`;
+    templateLabel.textContent = file.name;
+    templateLabel.title = file.name; // Add tooltip for long filenames
+    
     renderPreview();
-    exportTemplateBtn.disabled = !templateWords.length;
+    exportTemplateBtn.disabled = false;
     clearTemplateBtn.classList.remove('hidden');
-    log(`Template loaded: ${file.name} (${templateWords.length} words)`);
+    
+    log(`Template loaded: "${file.name}" with ${templateWords.length} unique search terms`, 'success');
+    showNotification(`Template loaded with ${templateWords.length} search terms`, 'success');
+    
   } catch (err) {
-    console.error(err);
+    console.error('Error loading template:', err);
     templateInfo.textContent = 'Failed to read template';
-    log('Error loading template: ' + (err.message || err));
+    log(`Error loading template: ${err.message || 'Invalid file format'}`, 'error');
+    showNotification('Failed to load template. Please check the file format.', 'error');
+    
+    // Reset template input
+    templateInput.value = '';
+    templateWords = [];
+    renderPreview();
+  } finally {
+    setProcessingState(false);
   }
 }
 
 function renderPreview() {
-  if (!templateWords.length) {
+  if (!templateWords || templateWords.length === 0) {
     previewWrap.classList.add('hidden');
+    termCount.textContent = '0';
     return;
   }
+  
   previewWrap.classList.remove('hidden');
   previewList.innerHTML = '';
-  const items = templateWords.slice(0, 8);
-  for (const t of items) {
-    const li = document.createElement('li');
-    li.textContent = t;
+  
+  // Update term count
+  termCount.textContent = templateWords.length;
+  
+  // Show first 5 terms with a "show more" button if there are more
+  const maxVisible = 5;
+  const itemsToShow = templateWords.slice(0, maxVisible);
+  
+  itemsToShow.forEach((term, index) => {
+    const li = document.createElement('div');
+    li.className = 'flex items-center py-1 px-2 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded';
+    li.innerHTML = `
+      <span class="inline-block w-5 text-xs text-slate-400">${index + 1}.</span>
+      <span class="font-mono text-sm truncate" title="${term}">${term}</span>
+    `;
     previewList.appendChild(li);
+  });
+  
+  // Add "show more" button if there are more terms
+  if (templateWords.length > maxVisible) {
+    const moreCount = templateWords.length - maxVisible;
+    const moreBtn = document.createElement('button');
+    moreBtn.className = 'text-xs text-indigo-600 dark:text-indigo-400 hover:underline mt-1';
+    moreBtn.textContent = `+ ${moreCount} more terms...`;
+    moreBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      showAllTerms();
+    });
+    
+    const container = document.createElement('div');
+    container.className = 'text-center pt-1 border-t border-slate-100 dark:border-slate-700 mt-2';
+    container.appendChild(moreBtn);
+    previewList.appendChild(container);
   }
-  if (templateWords.length > 8) {
-    const more = document.createElement('li');
-    more.textContent = `... and ${templateWords.length - 8} more`;
-    previewList.appendChild(more);
-  }
+}
+
+function showAllTerms() {
+  if (!templateWords.length) return;
+  
+  // Create a modal to show all terms
+  const modal = document.createElement('div');
+  modal.className = 'fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4';
+  
+  modal.innerHTML = `
+    <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col">
+      <div class="p-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
+        <h3 class="text-lg font-semibold">All Search Terms (${templateWords.length})</h3>
+        <button class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="p-4 overflow-y-auto flex-1">
+        <div class="space-y-1">
+          ${templateWords.map((term, i) => `
+            <div class="flex items-center py-1.5 px-2 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded">
+              <span class="w-8 text-sm text-slate-400">${i + 1}.</span>
+              <span class="font-mono text-sm break-all">${term}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      <div class="p-4 border-t border-slate-200 dark:border-slate-700 flex justify-end">
+        <button class="btn btn-ghost text-sm">Close</button>
+      </div>
+    </div>
+  `;
+  
+  // Add close handlers
+  const closeBtn = modal.querySelector('button');
+  const closeModal = () => {
+    modal.classList.add('opacity-0');
+    setTimeout(() => modal.remove(), 200);
+  };
+  
+  closeBtn.addEventListener('click', closeModal);
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) closeModal();
+  });
+  
+  // Add escape key handler
+  const handleKeyDown = (e) => {
+    if (e.key === 'Escape') closeModal();
+  };
+  
+  document.addEventListener('keydown', handleKeyDown);
+  
+  // Clean up event listener when modal is closed
+  modal.addEventListener('animationend', function handler() {
+    if (modal.classList.contains('opacity-0')) {
+      document.removeEventListener('keydown', handleKeyDown);
+      modal.removeEventListener('animationend', handler);
+    }
+  });
+  
+  // Add to DOM with animation
+  document.body.appendChild(modal);
+  requestAnimationFrame(() => {
+    modal.classList.add('opacity-100');
+  });
 }
 
 // drag & drop
