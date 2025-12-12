@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-50 dark:bg-slate-900">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>File Search Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  <script src="https://unpkg.com/pdfjs-dist@3.10.111/build/pdf.min.js"></script>
+  <script src="https://unpkg.com/lucide/dist/lucide.min.js"></script>
+  <script src="app.js" defer></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="h-full font-sans text-slate-900 dark:text-slate-100">
+
+  <div class="flex flex-col h-full">
+
+    <!-- Header -->
+    <header class="bg-indigo-600 dark:bg-indigo-700 text-white flex items-center justify-between px-6 py-3 shadow-md">
+      <h1 class="text-xl font-bold">File Search Dashboard</h1>
+      <div>
+        <button id="clearLogBtn" class="px-3 py-1 bg-indigo-500 hover:bg-indigo-400 rounded text-sm">Clear Logs</button>
+        <button id="downloadReportBtn" class="px-3 py-1 bg-green-500 hover:bg-green-400 rounded text-sm ml-2">Download Report</button>
+      </div>
+    </header>
+
+    <!-- Main content -->
+    <div class="flex flex-1 overflow-hidden">
+
+      <!-- Left sidebar / Controls -->
+      <aside class="w-96 bg-white dark:bg-slate-800 border-r border-slate-300 dark:border-slate-700 p-4 flex flex-col gap-4 overflow-y-auto">
+
+        <!-- Template upload -->
+        <div class="bg-slate-100 dark:bg-slate-700 p-3 rounded shadow">
+          <h2 class="font-semibold mb-2">Template</h2>
+          <input type="file" id="templateFile" class="mb-2 w-full text-sm" accept=".xlsx" hidden>
+          <div id="dropArea" class="border-2 border-dashed border-slate-400 dark:border-slate-500 p-3 rounded cursor-pointer text-center text-sm">
+            Click or drop Excel template here
+          </div>
+          <p id="templateInfo" class="text-xs mt-1 text-slate-600 dark:text-slate-300">No template loaded</p>
+          <ul id="previewWrap" class="mt-2 text-xs list-disc pl-5 hidden"></ul>
+          <div class="flex gap-2 mt-2">
+            <button id="clearTemplate" class="bg-red-500 hover:bg-red-400 text-white px-2 py-1 rounded hidden text-xs flex-1">Clear</button>
+            <button id="downloadSample" class="bg-indigo-500 hover:bg-indigo-400 text-white px-2 py-1 rounded text-xs flex-1">Sample</button>
+            <button id="exportTemplate" class="bg-green-500 hover:bg-green-400 text-white px-2 py-1 rounded text-xs flex-1" disabled>Export</button>
+          </div>
+        </div>
+
+        <!-- Source & Destination -->
+        <div class="bg-slate-100 dark:bg-slate-700 p-3 rounded shadow flex flex-col gap-2">
+          <h2 class="font-semibold">Folders</h2>
+          <button id="chooseSource" class="bg-indigo-500 hover:bg-indigo-400 text-white px-3 py-1 rounded text-sm">Select Source</button>
+          <p id="sourceInfo" class="text-xs text-slate-600 dark:text-slate-300">No source folder selected</p>
+          <button id="chooseDest" class="bg-indigo-500 hover:bg-indigo-400 text-white px-3 py-1 rounded text-sm">Select Destination</button>
+          <p id="destInfo" class="text-xs text-slate-600 dark:text-slate-300">No destination folder selected</p>
+        </div>
+
+        <!-- Options -->
+        <div class="bg-slate-100 dark:bg-slate-700 p-3 rounded shadow flex flex-col gap-2">
+          <h2 class="font-semibold">Options</h2>
+          <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" id="copyFilesToggle">
+            Copy matched files to destination
+          </label>
+          <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" id="caseInsensitive">
+            Case-insensitive search
+          </label>
+        </div>
+
+        <!-- Start/Cancel -->
+        <div class="flex gap-2">
+          <button id="startBtn" class="bg-green-500 hover:bg-green-400 text-white px-3 py-2 rounded flex-1">Start Search</button>
+          <button id="cancelBtn" class="bg-red-500 hover:bg-red-400 text-white px-3 py-2 rounded flex-1">Cancel</button>
+        </div>
+
+        <!-- Status -->
+        <div class="mt-2 text-xs">
+          <p>Status: <span id="status">Idle</span></p>
+          <div class="w-full bg-slate-300 dark:bg-slate-600 h-2 rounded mt-1">
+            <div id="progressBar" class="h-2 bg-green-500 w-0 rounded"></div>
+          </div>
+          <p class="text-right text-xs text-slate-600 dark:text-slate-300 mt-1" id="progressText">0 / 0</p>
+        </div>
+
+      </aside>
+
+      <!-- Right content / Tabs -->
+      <main class="flex-1 flex flex-col overflow-hidden p-4">
+        <!-- Tabs -->
+        <div class="flex border-b border-slate-300 dark:border-slate-700">
+          <button class="tab px-4 py-2 -mb-px font-medium text-slate-700 dark:text-slate-200 border-b-2 border-transparent hover:border-indigo-500" data-tab="resultsTab">Results</button>
+          <button class="tab px-4 py-2 -mb-px font-medium text-slate-700 dark:text-slate-200 border-b-2 border-transparent hover:border-indigo-500" data-tab="logsTab">Logs</button>
+          <button class="tab px-4 py-2 -mb-px font-medium text-slate-700 dark:text-slate-200 border-b-2 border-transparent hover:border-indigo-500" data-tab="templateTab">Template</button>
+        </div>
+
+        <!-- Tab panels -->
+        <div class="flex-1 overflow-y-auto mt-2">
+          <!-- Results -->
+          <div id="resultsTab" class="tabpanel hidden flex flex-col gap-2">
+            <div id="resultsLoading" class="text-sm text-slate-500">Waiting for search...</div>
+            <div id="reportPreview" class="flex flex-col gap-2"></div>
+          </div>
+
+          <!-- Logs -->
+          <div id="logsTab" class="tabpanel hidden">
+            <pre id="log" class="text-xs font-mono bg-slate-100 dark:bg-slate-800 p-2 rounded h-full overflow-y-auto"></pre>
+            <p id="logCount" class="text-xs mt-1 text-slate-600 dark:text-slate-300">0 log entries</p>
+          </div>
+
+          <!-- Template Table -->
+          <div id="templateTab" class="tabpanel hidden">
+            <div id="templateTableWrap" class="overflow-auto bg-slate-100 dark:bg-slate-800 p-2 rounded shadow"></div>
+          </div>
+        </div>
+
+      </main>
+    </div>
+  </div>
+
+</body>
+</html>
