@@ -77,10 +77,31 @@ function log(msg, type = 'info') {
   }
 }
 
-function clearLog() {
-  logEl.innerHTML = '';
-  logCount.textContent = '0 entries';
-  log('Log cleared', 'info');
+async function clearLog() {
+  const result = await Swal.fire({
+    title: 'Clear Activity Log',
+    text: 'Are you sure you want to clear the activity log? This action cannot be undone.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#4f46e5',
+    cancelButtonColor: '#6b7280',
+    confirmButtonText: 'Yes, clear it!',
+    cancelButtonText: 'Cancel',
+    reverseButtons: true
+  });
+
+  if (result.isConfirmed) {
+    logEl.innerHTML = '';
+    logCount.textContent = '0 entries';
+    
+    await Swal.fire(
+      'Cleared!',
+      'The activity log has been cleared.',
+      'success'
+    );
+    
+    log('Log cleared', 'info');
+  }
 }
 
 function setStatus(status, type = 'info') {
@@ -508,12 +529,19 @@ startBtn.addEventListener('click', async () => {
 
   // Collect file handles
   const fileHandles = [];
+  const pathSeparator = '/'; // Use forward slash for consistency
+  
   async function traverse(dirHandle, basePath = '') {
     for await (const [name, handle] of dirHandle.entries()) {
       if (cancelRequested) return;
-      const entryPath = basePath ? `${basePath}/${name}` : name;
+      const entryPath = basePath ? `${basePath}${pathSeparator}${name}` : name;
+      
       if (handle.kind === 'file') {
-        fileHandles.push({ handle, path: entryPath });
+        fileHandles.push({ 
+          handle, 
+          path: entryPath,
+          name: name
+        });
       } else if (handle.kind === 'directory') {
         await traverse(handle, entryPath);
       }
@@ -551,42 +579,99 @@ startBtn.addEventListener('click', async () => {
         try {
           const file = await handle.getFile();
           const ab = await file.arrayBuffer();
-          const pdf = await pdfjsLib.getDocument({ data: ab }).promise;
+          const pdf = await pdfjsLib.getDocument({ 
+            data: ab,
+            // Add these options for better error handling
+            disableWorker: false,
+            disableAutoFetch: true,
+            disableStream: true
+          }).promise;
+          
           if (pdf.numPages >= 1) {
             const page = await pdf.getPage(1);
-            const txt = await page.getTextContent();
-            const pageText = txt.items.map(i => i.str).join(' ');
-            const textToTest = norm(pageText);
-            for (const w of templateWords) {
-              const testWord = norm(w);
-              if (textToTest.includes(testWord)) {
-                foundMap[w].push(`PDF_FIRST_PAGE: ${path}`);
+            try {
+              const txt = await page.getTextContent();
+              // Add null check for txt.items
+              const pageText = txt.items ? txt.items.map(i => i.str || '').join(' ') : '';
+              const textToTest = norm(pageText);
+              for (const w of templateWords) {
+                const testWord = norm(w);
+                if (textToTest.includes(testWord)) {
+                  foundMap[w].push(`PDF_FIRST_PAGE: ${path}`);
+                }
+              }
+            } finally {
+              // Ensure page resources are always cleaned up
+              if (page.cleanup) {
+                try {
+                  await page.cleanup();
+                } catch (cleanupErr) {
+                  console.warn('Page cleanup error:', cleanupErr);
+                }
               }
             }
-            page.cleanup && page.cleanup();
           }
-          pdf.cleanup && pdf.cleanup();
+          // Ensure PDF resources are always cleaned up
+          if (pdf.cleanup) {
+            try {
+              await pdf.cleanup();
+            } catch (cleanupErr) {
+              console.warn('PDF cleanup error:', cleanupErr);
+            }
+          }
         } catch (pdfErr) {
-          log(`PDF parse error (${path}): ${pdfErr.message || pdfErr}`);
+          // Safely handle the error to prevent uncaught exceptions
+          try {
+            const errorMessage = pdfErr && (pdfErr.message || String(pdfErr));
+            log(`❌ PDF error (${path}): ${errorMessage}`, 'error');
+            console.error('PDF processing error:', {
+              error: pdfErr,
+              name: pdfErr && pdfErr.name,
+              message: errorMessage,
+              stack: pdfErr && pdfErr.stack
+            });
+          } catch (logErr) {
+            // Last resort error handling if even the error logging fails
+            console.error('Critical error in PDF error handler:', logErr);
+          }
         }
       }
 
       // Optional copy matched files to destination
       if (copyMatched) {
-        // If any word matched in filename or PDF first page (foundMap... contains entries)
-        const matched = templateWords.some(w => foundMap[w].some(loc => loc.endsWith(path)));
+        // Check if this file was matched in any way
+        const matched = templateWords.some(w => 
+          foundMap[w].some(loc => {
+            // Match either the full path or just the filename
+            const locPath = loc.split(':').pop().trim();
+            return path.endsWith(locPath) || path.includes(locPath);
+          })
+        );
+        
         if (matched) {
-          // copy file into dest preserving folder name
           try {
+            log(`⏳ Preparing to copy: ${path}`);
             const targetHandle = await ensurePathAndGetHandle(destHandle, path);
             const srcFile = await handle.getFile();
-            const writable = await targetHandle.createWritable();
-            await writable.write(await srcFile.arrayBuffer());
-            await writable.close();
-            copiedCount++;
-            log(`Copied matched file: ${path}`);
+            
+            if (srcFile) {
+              log(`📄 Source file size: ${(srcFile.size / 1024).toFixed(2)} KB`);
+              const writable = await targetHandle.createWritable();
+              const fileContent = await srcFile.arrayBuffer();
+              await writable.write(fileContent);
+              await writable.close();
+              copiedCount++;
+              log(`✅ Successfully copied: ${path}`);
+            } else {
+              log(`❌ Source file not accessible: ${path}`, 'error');
+            }
           } catch (copyErr) {
-            log(`Failed copying ${path}: ${copyErr.message || copyErr}`);
+            log(`❌ Failed to copy ${path}: ${copyErr.message || copyErr}`, 'error');
+            console.error('Copy error details:', {
+              error: copyErr,
+              name: copyErr.name,
+              stack: copyErr.stack
+            });
           }
         }
       }
@@ -610,11 +695,44 @@ startBtn.addEventListener('click', async () => {
   // Build rows for report
   const rows = [];
   rows.push(['searchword', 'result', 'where_found']);
+  
+  // Track all unique matched files
+  const allMatchedFiles = new Set();
+  
   for (const w of templateWords) {
     const locations = [...new Set(foundMap[w])];
     const result = locations.length ? 'FOUND' : 'NOT FOUND';
     const where = locations.join(' ; ');
     rows.push([w, result, where]);
+    
+    // Extract file paths from locations
+    locations.forEach(loc => {
+      const match = loc.match(/:\s*(.*)$/);
+      if (match && match[1]) {
+        allMatchedFiles.add(match[1]);
+      }
+    });
+  }
+  
+  // Log summary of matched files
+  if (allMatchedFiles.size > 0) {
+    log('\n📋 Matched Files Summary:');
+    log('======================');
+    Array.from(allMatchedFiles).sort().forEach((file, index) => {
+      log(`${index + 1}. ${file}`);
+    });
+    log(`\nTotal matched files: ${allMatchedFiles.size}`);
+    
+    if (copyMatched) {
+      log(`\n📦 Copied ${copiedCount} file(s) to destination folder`);
+      if (copiedCount < allMatchedFiles.size) {
+        log(`ℹ️  Some files might not have been copied due to errors. Check the log above for details.`, 'warning');
+      }
+    } else {
+      log('\nℹ️  File copying is disabled. Enable "Copy matched files" to copy files to destination.');
+    }
+  } else {
+    log('\nℹ️  No files matched the search criteria.');
   }
 
   // Create workbook
