@@ -1,135 +1,451 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Search & Report Tool — Modern</title>
-
-  <!-- Tailwind CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
-
-  <!-- pdf.js (mozilla) -->
-  <script src="https://unpkg.com/pdfjs-dist@3.10.111/build/pdf.min.js"></script>
-
-  <!-- SheetJS (xlsx) -->
-  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
-
-  <link rel="stylesheet" href="styles.css" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>File Search Pro | Advanced File Search Tool</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23646cff'><path d='M15.5 14h-.79l-.28-.27A6.5 6.5 0 1 0 9.5 16a6.5 6.5 0 0 0 4.23-1.67l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z'/></svg>">
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS with custom config -->
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            primary: {
+              50: '#f0f4ff',
+              100: '#e0e9ff',
+              200: '#c7d7fe',
+              300: '#a5b4fc',
+              400: '#818cf8',
+              500: '#646cff',
+              600: '#4f46e5',
+              700: '#4338ca',
+              800: '#3730a3',
+              900: '#312e81',
+            },
+            success: {
+              50: '#f0fdf4',
+              100: '#dcfce7',
+              500: '#22c55e',
+              600: '#16a34a',
+            },
+            warning: {
+              50: '#fffbeb',
+              100: '#fef3c7',
+              500: '#f59e0b',
+              600: '#d97706',
+            },
+            danger: {
+              50: '#fef2f2',
+              100: '#fee2e2',
+              500: '#ef4444',
+              600: '#dc2626',
+            },
+            dark: {
+              800: '#1e293b',
+              900: '#0f172a',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+          },
+          boxShadow: {
+            'card': '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+            'card-hover': '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+          },
+          animation: {
+            'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+          }
+        }
+      },
+      plugins: [
+        require('@tailwindcss/forms'),
+        require('@tailwindcss/typography'),
+      ]
+    };
+  </script>
+  
+  <!-- Tailwind CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  
+  <!-- SweetAlert2 -->
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  
+  <!-- PDF.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.10.111/pdf.min.js" integrity="sha512-+KfQ2k8y9WMoX9FbNp3tX+3.0U/fO+QMC1p7t3lP1Z1f3Q1Tg36F7WVql4JBA7L0IFD4wvU6Tf0CqVMQvQ5Jg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
 </head>
-<body class="antialiased bg-gradient-to-b from-slate-50 to-white dark:from-slate-900 dark:to-slate-800 text-slate-800 dark:text-slate-100">
-  <div class="min-h-screen flex items-center justify-center p-6">
-    <div class="w-full max-w-5xl bg-white/80 dark:bg-slate-900/60 backdrop-blur-md rounded-3xl shadow-2xl p-6">
-      <header class="flex items-start justify-between gap-4 mb-6">
-        <div>
-          <h1 class="text-2xl md:text-3xl font-semibold">Search & Report Tool</h1>
-          <p class="text-sm text-slate-500 dark:text-slate-300 mt-1 max-w-xl">
-            Upload an Excel template (.xlsx) with search words (first column). Choose source & destination folders, then start.
-            The app searches file names and PDF first page text and produces an Excel report.
-          </p>
-        </div>
-        <div class="flex flex-col items-end gap-2">
-          <div class="text-xs text-slate-500 dark:text-slate-400">Theme: Auto</div>
-          <div class="inline-flex gap-2">
-            <button id="downloadSample" class="btn btn-ghost">Download Sample Template</button>
-            <button id="exportTemplate" class="btn btn-primary" disabled>Export Loaded Template</button>
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 min-h-screen flex flex-col">
+  <!-- Header -->
+  <header class="bg-white dark:bg-gray-800 shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+      <div class="flex justify-between items-center">
+        <div class="flex items-center space-x-3">
+          <div class="bg-primary-100 dark:bg-primary-900 p-2 rounded-lg">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-primary-600 dark:text-primary-400">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+              <path d="M8 10h.01"></path>
+              <path d="M12 10h.01"></path>
+              <path d="M16 10h.01"></path>
+            </svg>
           </div>
+          <h1 class="text-xl font-bold text-gray-900 dark:text-white">File Search Pro</h1>
         </div>
-      </header>
+        <div class="flex items-center space-x-4">
+          <button id="themeToggle" class="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300">
+            <i data-lucide="moon" class="dark:hidden"></i>
+            <i data-lucide="sun" class="hidden dark:block"></i>
+          </button>
+          <div class="h-8 w-px bg-gray-200 dark:bg-gray-700"></div>
+          <button class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
+            <i data-lucide="help-circle" class="mr-2 h-4 w-4"></i>
+            Help
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
 
-      <main class="space-y-5">
-        <!-- top: template + folder pickers -->
-        <section class="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div class="col-span-1 md:col-span-1 p-4 bg-white dark:bg-slate-800 rounded-xl shadow-sm border">
-            <label class="text-sm font-medium">Template (.xlsx)</label>
-            <div id="dropArea" class="mt-3 p-3 border-dashed border-2 rounded-lg cursor-pointer hover:border-slate-300 dark:hover:border-slate-600 transition">
-              <input id="templateFile" type="file" accept=".xlsx,.xls" class="hidden" />
-              <div class="flex items-center gap-3">
-                <svg class="w-7 h-7 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4a1 1 0 011-1h8a1 1 0 011 1v12M7 16h10M7 16l-1 4h12l-1-4M9 9h6" /></svg>
-                <div>
-                  <div id="templateLabel" class="text-sm font-medium">Drag & drop template or click to upload</div>
-                  <div id="templateInfo" class="text-xs text-slate-400 dark:text-slate-300 mt-1">No template loaded</div>
+  <!-- Main Content -->
+  <main class="flex-grow">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <!-- Tabs Navigation -->
+      <div class="border-b border-gray-200 dark:border-gray-700 mb-6">
+        <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+          <button class="tab whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 border-primary-500 text-primary-600 dark:text-primary-400" data-tab="templateTab">
+            <i data-lucide="file-spreadsheet" class="h-4 w-4"></i>
+            <span>Template</span>
+          </button>
+          <button class="tab whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300" data-tab="sourceTab">
+            <i data-lucide="folder" class="h-4 w-4"></i>
+            <span>Source & Destination</span>
+          </button>
+          <button class="tab whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300" data-tab="searchTab">
+            <i data-lucide="search" class="h-4 w-4"></i>
+            <span>Search</span>
+          </button>
+          <button class="tab whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300" data-tab="logsTab">
+            <i data-lucide="terminal" class="h-4 w-4"></i>
+            <span>Logs</span>
+            <span id="logBadge" class="hidden inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">0</span>
+          </button>
+          <button class="tab whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300" data-tab="reportTab">
+            <i data-lucide="file-text" class="h-4 w-4"></i>
+            <span>Report</span>
+          </button>
+        </nav>
+      </div>
+
+      <!-- Tab Panels -->
+      <div class="space-y-6">
+        <!-- Template Tab -->
+        <div id="templateTab" class="tabpanel">
+          <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+            <div class="md:flex md:items-center md:justify-between mb-6">
+              <div class="min-w-0 flex-1">
+                <h2 class="text-lg font-medium leading-7 text-gray-900 dark:text-white sm:truncate sm:text-xl sm:tracking-tight">
+                  Template Manager
+                </h2>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  Upload or create a template file containing your search terms.
+                </p>
+              </div>
+              <div class="mt-4 flex md:mt-0 md:ml-4 space-x-3">
+                <button id="downloadSampleBtn" class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
+                  <i data-lucide="download" class="-ml-1 mr-2 h-4 w-4"></i>
+                  Export Template
+                </button>
+                <button id="exportTemplateBtn" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50" disabled>
+                  <i data-lucide="upload" class="-ml-1 mr-2 h-4 w-4"></i>
+                  Import Template
+                </button>
+              </div>
+            </div>
+
+            <div class="space-y-6">
+              <div>
+                <input type="file" id="templateFile" class="hidden" accept=".xlsx">
+                <div id="dropArea" class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-md cursor-pointer hover:border-primary-500 hover:bg-primary-50 dark:hover:bg-gray-700 transition-colors duration-200">
+                  <div class="space-y-1 text-center">
+                    <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
+                      <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                    <div class="flex text-sm text-gray-600 dark:text-gray-300">
+                      <label class="relative cursor-pointer rounded-md font-medium text-primary-600 dark:text-primary-400 hover:text-primary-500 focus-within:outline-none">
+                        <span>Upload a file</span>
+                        <input type="file" class="sr-only">
+                      </label>
+                      <p class="pl-1">or drag and drop</p>
+                    </div>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                      Excel file (.xlsx) up to 10MB
+                    </p>
+                  </div>
+                </div>
+                <p id="templateInfo" class="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                  No template loaded. Upload a file or download a sample template to get started.
+                </p>
+              </div>
+
+              <div id="previewWrap" class="hidden">
+                <div class="flex items-center justify-between mb-2">
+                  <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300">Template Preview</h3>
+                  <button id="clearTemplate" class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-300 dark:hover:bg-red-900/50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                    <i data-lucide="trash-2" class="mr-1 h-3 w-3"></i>
+                    Clear Template
+                  </button>
+                </div>
+                <div class="overflow-hidden border border-gray-200 dark:border-gray-700 rounded-lg">
+                  <div id="templateTableWrap" class="overflow-auto max-h-96"></div>
                 </div>
               </div>
             </div>
-            <div class="mt-3">
-              <button id="clearTemplate" class="btn btn-ghost hidden">Clear Template</button>
-            </div>
-            <div id="previewWrap" class="mt-4 hidden">
-              <div class="text-xs text-slate-500 dark:text-slate-400 mb-2">Preview (first 8 searchwords):</div>
-              <ul id="previewList" class="text-sm font-mono text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-900 p-2 rounded-md max-h-36 overflow-auto"></ul>
-            </div>
           </div>
+        </div>
 
-          <div class="col-span-1 md:col-span-2 p-4 bg-white dark:bg-slate-800 rounded-xl shadow-sm border flex flex-col gap-4">
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label class="block text-sm font-medium mb-1">Source Folder</label>
-                <button id="chooseSource" class="btn btn-secondary w-full">Choose Source Folder</button>
-                <div id="sourceInfo" class="text-xs text-slate-400 dark:text-slate-300 mt-2">No folder selected</div>
-              </div>
-              <div>
-                <label class="block text-sm font-medium mb-1">Destination Folder</label>
-                <button id="chooseDest" class="btn btn-secondary w-full">Choose Destination Folder</button>
-                <div id="destInfo" class="text-xs text-slate-400 dark:text-slate-300 mt-2">No folder selected</div>
-              </div>
+        <!-- Source/Destination Tab -->
+        <div id="sourceTab" class="tabpanel hidden">
+          <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+            <div class="mb-6">
+              <h2 class="text-lg font-medium text-gray-900 dark:text-white">Source & Destination Folders</h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Configure the source folder to search in and the destination folder for matched files.
+              </p>
             </div>
 
-            <div class="flex items-center justify-between gap-3">
-              <div class="flex items-center gap-4">
-                <label class="flex items-center gap-2 text-sm">
-                  <input id="caseInsensitive" type="checkbox" class="h-4 w-4" checked />
-                  <span class="text-sm text-slate-600 dark:text-slate-300">Case-insensitive</span>
+            <div class="space-y-6">
+              <div class="sm:grid sm:grid-cols-3 sm:gap-4 sm:items-start sm:border-t sm:border-gray-200 dark:sm:border-gray-700 sm:pt-5">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 sm:mt-px sm:pt-2">
+                  Source Folder
                 </label>
-                <label class="flex items-center gap-2 text-sm">
-                  <input id="copyFilesToggle" type="checkbox" class="h-4 w-4" />
-                  <span class="text-sm text-slate-600 dark:text-slate-300">Also copy matched files to destination</span>
+                <div class="mt-1 sm:mt-0 sm:col-span-2">
+                  <div class="flex rounded-md shadow-sm">
+                    <div class="relative flex-grow focus-within:z-10">
+                      <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <i data-lucide="folder" class="h-5 w-5 text-gray-400"></i>
+                      </div>
+                      <div id="sourceInfo" class="block w-full pl-10 pr-3 py-2 rounded-l-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-500 dark:text-gray-300 sm:text-sm overflow-hidden text-ellipsis whitespace-nowrap">
+                        No folder selected
+                      </div>
+                    </div>
+                    <button id="chooseSource" class="-ml-px relative inline-flex items-center space-x-2 px-4 py-2 border border-l-0 border-gray-300 dark:border-gray-600 text-sm font-medium rounded-r-md text-gray-700 dark:text-gray-200 bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500">
+                      <i data-lucide="folder-plus" class="h-4 w-4"></i>
+                      <span>Browse</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="sm:grid sm:grid-cols-3 sm:gap-4 sm:items-start sm:border-t sm:border-gray-200 dark:sm:border-gray-700 sm:pt-5">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 sm:mt-px sm:pt-2">
+                  Destination Folder
                 </label>
-              </div>
-
-              <div class="flex items-center gap-2">
-                <button id="startBtn" class="btn btn-primary px-4">Start</button>
-                <button id="cancelBtn" class="btn btn-ghost px-4">Cancel</button>
+                <div class="mt-1 sm:mt-0 sm:col-span-2">
+                  <div class="flex rounded-md shadow-sm">
+                    <div class="relative flex-grow focus-within:z-10">
+                      <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <i data-lucide="folder" class="h-5 w-5 text-gray-400"></i>
+                      </div>
+                      <div id="destInfo" class="block w-full pl-10 pr-3 py-2 rounded-l-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-500 dark:text-gray-300 sm:text-sm overflow-hidden text-ellipsis whitespace-nowrap">
+                        No folder selected
+                      </div>
+                    </div>
+                    <button id="chooseDest" class="-ml-px relative inline-flex items-center space-x-2 px-4 py-2 border border-l-0 border-gray-300 dark:border-gray-600 text-sm font-medium rounded-r-md text-gray-700 dark:text-gray-200 bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500">
+                      <i data-lucide="folder-plus" class="h-4 w-4"></i>
+                      <span>Browse</span>
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-        </section>
+        </div>
 
-        <!-- progress + log -->
-        <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div class="p-4 bg-white dark:bg-slate-800 rounded-xl shadow-sm border">
-            <div class="flex items-center justify-between mb-2">
+        <!-- Search Tab -->
+        <div id="searchTab" class="tabpanel hidden">
+          <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+            <div class="mb-6">
+              <h2 class="text-lg font-medium text-gray-900 dark:text-white">Search Configuration</h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Configure your search parameters and start the search process.
+              </p>
+            </div>
+
+            <div class="space-y-6">
+              <div class="space-y-4">
+                <div class="flex items-center">
+                  <input id="copyFilesToggle" type="checkbox" class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 dark:border-gray-600 rounded">
+                  <label for="copyFilesToggle" class="ml-2 block text-sm text-gray-700 dark:text-gray-300">
+                    Copy matched files to destination folder
+                  </label>
+                </div>
+                <div class="flex items-center">
+                  <input id="caseInsensitive" type="checkbox" checked class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 dark:border-gray-600 rounded">
+                  <label for="caseInsensitive" class="ml-2 block text-sm text-gray-700 dark:text-gray-300">
+                    Case-insensitive search
+                  </label>
+                </div>
+              </div>
+
+              <div class="pt-2">
+                <div class="flex space-x-3">
+                  <button id="startBtn" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                    <i data-lucide="play" class="-ml-1 mr-2 h-4 w-4"></i>
+                    Start Search
+                  </button>
+                  <button id="cancelBtn" class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md shadow-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
+                    <i data-lucide="x" class="-ml-1 mr-2 h-4 w-4"></i>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+
+              <div class="pt-2">
+                <div class="flex justify-between text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <span id="status">Ready</span>
+                  <span id="progressText">0 / 0 files</span>
+                </div>
+                <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+                  <div id="progressBar" class="bg-primary-600 h-2.5 rounded-full transition-all duration-300 ease-in-out" style="width: 0%"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Logs Tab -->
+        <div id="logsTab" class="tabpanel hidden">
+          <div class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
+            <div class="px-6 py-5 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+              <h2 class="text-lg font-medium text-gray-900 dark:text-white">Logs</h2>
+              <div class="flex items-center space-x-3">
+                <span id="logCount" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200">0 entries</span>
+                <button id="clearLog" class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-300 dark:hover:bg-red-900/50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                  <i data-lucide="trash-2" class="mr-1 h-3 w-3"></i>
+                  Clear Logs
+                </button>
+              </div>
+            </div>
+            <div class="px-6 py-4">
+              <div class="h-96 overflow-y-auto bg-gray-50 dark:bg-gray-900 rounded-lg p-4 font-mono text-sm">
+                <pre id="log" class="text-xs text-gray-800 dark:text-gray-200"></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Report Tab -->
+        <div id="reportTab" class="tabpanel hidden">
+          <div class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
+            <div class="px-6 py-5 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+              <h2 class="text-lg font-medium text-gray-900 dark:text-white">Search Report</h2>
               <div>
-                <div class="text-sm font-medium">Progress</div>
-                <div id="status" class="text-xs text-slate-500 dark:text-slate-300 mt-1">Idle</div>
+                <button id="downloadReportBtn" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50" disabled>
+                  <i data-lucide="download" class="-ml-1 mr-2 h-4 w-4"></i>
+                  Download Report
+                </button>
               </div>
-              <div class="text-sm text-slate-500 dark:text-slate-400" id="progressText">0 / 0</div>
             </div>
-            <div class="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-3 overflow-hidden">
-              <div id="progressBar" class="h-3 bg-gradient-to-r from-indigo-500 to-violet-500 w-0"></div>
-            </div>
-            <div class="mt-3 text-xs text-slate-500 dark:text-slate-400">Estimated time varies depending on file count and PDF parsing.</div>
-          </div>
-
-          <div class="p-4 bg-white dark:bg-slate-800 rounded-xl shadow-sm border">
-            <div class="flex items-center justify-between mb-2">
-              <div class="text-sm font-medium">Activity Log</div>
-              <div class="text-xs text-slate-400 dark:text-slate-300" id="logCount">0 entries</div>
-            </div>
-            <div id="log" class="h-52 overflow-y-auto text-xs bg-slate-50 dark:bg-slate-900 p-3 rounded-md font-mono"></div>
-            <div class="mt-3 flex items-center gap-2">
-              <button id="clearLog" class="btn btn-ghost text-xs">Clear Log</button>
-              <button id="downloadReportBtn" class="btn btn-secondary text-xs ml-auto" disabled>Download Report</button>
+            <div class="p-6">
+              <div id="reportPreview" class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 h-96 overflow-y-auto">
+                <p class="text-sm text-gray-500 dark:text-gray-400 text-center py-12">
+                  Run a search to generate a report
+                </p>
+              </div>
             </div>
           </div>
-        </section>
-
-        <footer class="text-xs text-slate-500 dark:text-slate-400 mt-2">
-          Note: For full filesystem folder access use Chrome or Edge and serve the files via local web server (not file://).
-        </footer>
-      </main>
+        </div>
+      </div>
     </div>
-  </div>
+  </main>
 
-  <script type="module" src="app.js"></script>
+  <!-- Footer -->
+  <footer class="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 py-4">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex flex-col md:flex-row justify-between items-center">
+        <p class="text-sm text-gray-500 dark:text-gray-400">
+          &copy; 2023 File Search Pro. All rights reserved.
+        </p>
+        <div class="mt-2 md:mt-0 flex space-x-6">
+          <a href="#" class="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+            Privacy
+          </a>
+          <a href="#" class="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+            Terms
+          </a>
+          <a href="#" class="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+            Contact
+          </a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- PDF.js Library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.10.111/pdf.min.js"></script>
+  <script>
+    // Configure PDF.js worker
+    pdfjsLib = pdfjsLib || {};
+    pdfjsLib.GlobalWorkerOptions = pdfjsLib.GlobalWorkerOptions || {};
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.10.111/pdf.worker.min.js';
+  </script>
+
+  <!-- App Scripts -->
+  <script src="app.js"></script>
+  
+  <!-- Initialize Lucide Icons -->
+  <script>
+    lucide.createIcons();
+    
+    // Theme toggle functionality
+    const themeToggle = document.getElementById('themeToggle');
+    const html = document.documentElement;
+    
+    // Check for saved user preference, if any, on load of the website
+    if (localStorage.getItem('theme') === 'dark' || (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      html.classList.add('dark');
+    } else {
+      html.classList.remove('dark');
+    }
+    
+    // Toggle theme on button click
+    themeToggle.addEventListener('click', () => {
+      html.classList.toggle('dark');
+      localStorage.setItem('theme', html.classList.contains('dark') ? 'dark' : 'light');
+    });
+    
+    // Tab switching functionality
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        // Hide all tab panels
+        document.querySelectorAll('.tabpanel').forEach(panel => {
+          panel.classList.add('hidden');
+        });
+        
+        // Deactivate all tabs
+        document.querySelectorAll('.tab').forEach(t => {
+          t.classList.remove('border-primary-500', 'text-primary-600', 'dark:text-primary-400');
+          t.classList.add('border-transparent', 'text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300', 'dark:text-gray-400', 'dark:hover:text-gray-300');
+        });
+        
+        // Show the selected tab panel
+        const tabId = tab.getAttribute('data-tab');
+        document.getElementById(tabId).classList.remove('hidden');
+        
+        // Activate the clicked tab
+        tab.classList.remove('border-transparent', 'text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300', 'dark:text-gray-400', 'dark:hover:text-gray-300');
+        tab.classList.add('border-primary-500', 'text-primary-600', 'dark:text-primary-400');
+      });
+    });
+  </script>
 </body>
 </html>
