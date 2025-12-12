@@ -1,9 +1,7 @@
-// app.js
-// Modern dashboard logic with 2-column layout and card-style results
-// Works with Tailwind 3 + SweetAlert2 + Lucide + pdf.js + SheetJS
-
+// app.js (module)
 const templateInput = document.getElementById('templateFile');
 const dropArea = document.getElementById('dropArea');
+const templateLabel = document.getElementById('templateLabel');
 const templateInfo = document.getElementById('templateInfo');
 const previewWrap = document.getElementById('previewWrap');
 const previewList = document.getElementById('previewList');
@@ -30,16 +28,6 @@ const logCount = document.getElementById('logCount');
 const clearLogBtn = document.getElementById('clearLog');
 const downloadReportBtn = document.getElementById('downloadReportBtn');
 
-const templateTableWrap = document.getElementById('templateTableWrap');
-const reportPreview = document.getElementById('reportPreview');
-
-// search state
-let searchResults = [];
-let filesScanned = 0;
-let matchesFound = 0;
-let duplicatesFound = 0;
-let fileHashes = new Map();
-
 let sourceHandle = null;
 let destHandle = null;
 let templateWords = [];
@@ -47,39 +35,23 @@ let cancelRequested = false;
 let lastReportBlobUrl = null;
 let lastReportName = null;
 
-// Setup pdf.js worker
+// pdf.js worker
 if (window.pdfjsLib) {
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.10.111/build/pdf.worker.min.js';
 }
 
-// ------------------- Utility Functions -------------------
-
-async function calculateFileHash(file) {
-  const buffer = await file.arrayBuffer();
-  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-function formatFileSize(bytes) {
-  if (bytes === 0) return '0 Bytes';
-  const k = 1024;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
-
+// --- UI Helpers ---
 function log(msg) {
   const time = new Date().toLocaleTimeString();
   const line = `[${time}] ${msg}`;
   logEl.textContent += line + '\n';
   logEl.scrollTop = logEl.scrollHeight;
-  logCount.textContent = `${logEl.textContent.split('\n').filter(Boolean).length} log entries`;
+  logCount.textContent = `${logEl.textContent.split('\n').filter(Boolean).length} entries`;
 }
 
 function clearLog() {
   logEl.textContent = '';
-  logCount.textContent = '0 log entries';
+  logCount.textContent = '0 entries';
 }
 
 function setStatus(s) {
@@ -92,217 +64,71 @@ function setProgress(done, total) {
   progressText.textContent = `${done} / ${total}`;
 }
 
-// ------------------- Template Handling -------------------
-
+// --- Template handling ---
 async function loadXlsxFile(file) {
   try {
     const ab = await file.arrayBuffer();
     const wb = XLSX.read(ab, { type: 'array' });
-    const ws = wb.Sheets[wb.SheetNames[0]];
+    const firstSheet = wb.SheetNames[0];
+    const ws = wb.Sheets[firstSheet];
+    // read as array of arrays
     const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-    templateWords = rows.slice(1).map(r => (r[0] || '').toString().trim()).filter(Boolean);
-
-    templateInfo.textContent = `Loaded ${templateWords.length} words from "${file.name}"`;
-    previewWrap.classList.remove('hidden');
+    templateWords = rows.map(r => (r[0] || '').toString().trim()).filter(Boolean);
+    templateInfo.textContent = `Loaded ${templateWords.length} search words from "${file.name}"`;
     renderPreview();
     exportTemplateBtn.disabled = !templateWords.length;
     clearTemplateBtn.classList.remove('hidden');
-    renderTemplateTable();
-
-    Swal.fire({ icon: 'success', title: 'Template loaded', text: `${templateWords.length} words loaded.` });
     log(`Template loaded: ${file.name} (${templateWords.length} words)`);
   } catch (err) {
     console.error(err);
     templateInfo.textContent = 'Failed to read template';
-    Swal.fire({ icon: 'error', title: 'Failed to load template', text: err.message || err });
     log('Error loading template: ' + (err.message || err));
   }
 }
 
 function renderPreview() {
+  if (!templateWords.length) {
+    previewWrap.classList.add('hidden');
+    return;
+  }
+  previewWrap.classList.remove('hidden');
   previewList.innerHTML = '';
   const items = templateWords.slice(0, 8);
-  items.forEach(t => {
+  for (const t of items) {
     const li = document.createElement('li');
     li.textContent = t;
-    li.className = 'px-2 py-1 bg-indigo-100 dark:bg-indigo-900/30 rounded text-indigo-800 dark:text-indigo-200 text-xs';
     previewList.appendChild(li);
-  });
+  }
   if (templateWords.length > 8) {
     const more = document.createElement('li');
     more.textContent = `... and ${templateWords.length - 8} more`;
-    more.className = 'text-slate-500 dark:text-slate-400 text-xs';
     previewList.appendChild(more);
   }
 }
 
-function renderTemplateTable() {
-  templateTableWrap.innerHTML = '';
-  if (!templateWords.length) return;
-  const table = document.createElement('table');
-  table.className = 'w-full text-sm font-mono border border-slate-300 dark:border-slate-700 rounded';
-  const thead = document.createElement('thead');
-  thead.innerHTML = `<tr class="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"><th class="p-1 text-left">#</th><th class="p-1 text-left">Word</th></tr>`;
-  table.appendChild(thead);
-
-  const tbody = document.createElement('tbody');
-  templateWords.forEach((w, i) => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td class="p-1 border-t border-slate-200 dark:border-slate-700">${i+1}</td><td class="p-1 border-t border-slate-200 dark:border-slate-700">${w}</td>`;
-    tbody.appendChild(tr);
-  });
-  table.appendChild(tbody);
-  templateTableWrap.appendChild(table);
-}
-
-// ------------------- Folder Selection -------------------
-
-chooseSourceBtn.addEventListener('click', async () => {
-  try { sourceHandle = await window.showDirectoryPicker(); sourceInfo.textContent = `Source: ${sourceHandle.name}`; log(`Source selected: ${sourceHandle.name}`); } 
-  catch { log('Source selection canceled'); }
+// drag & drop
+dropArea.addEventListener('click', () => templateInput.click());
+dropArea.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  dropArea.classList.add('ring-2', 'ring-indigo-400');
 });
-
-chooseDestBtn.addEventListener('click', async () => {
-  try { destHandle = await window.showDirectoryPicker(); destInfo.textContent = `Destination: ${destHandle.name}`; log(`Destination selected: ${destHandle.name}`); } 
-  catch { log('Destination selection canceled'); }
+dropArea.addEventListener('dragleave', () => {
+  dropArea.classList.remove('ring-2', 'ring-indigo-400');
 });
-
-// ------------------- Start Search -------------------
-
-startBtn.addEventListener('click', async () => {
-  if (!templateWords.length) return Swal.fire({ icon:'error', title:'No template', text:'Upload a template first.' });
-  if (!sourceHandle) return Swal.fire({ icon:'error', title:'No source', text:'Choose a source folder.' });
-  if (!destHandle) return Swal.fire({ icon:'error', title:'No dest', text:'Choose a destination folder.' });
-
-  cancelRequested = false;
-  setStatus('Preparing...');
-  log('Search started');
-  lastReportBlobUrl && URL.revokeObjectURL(lastReportBlobUrl);
-  lastReportBlobUrl = null;
-  downloadReportBtn.disabled = true;
-  reportPreview.innerHTML = '';
-  searchResults = [];
-
-  // Traverse files
-  const fileHandles = [];
-  async function traverse(dir, base='') {
-    for await (const [name, handle] of dir.entries()) {
-      if (cancelRequested) return;
-      const path = base ? `${base}/${name}` : name;
-      if (handle.kind === 'file') fileHandles.push({handle, path});
-      else if (handle.kind === 'directory') await traverse(handle, path);
-    }
+dropArea.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropArea.classList.remove('ring-2', 'ring-indigo-400');
+  const f = e.dataTransfer.files[0];
+  if (f) {
+    templateInput.files = e.dataTransfer.files;
+    loadXlsxFile(f);
   }
-  await traverse(sourceHandle);
-  setStatus('Scanning files...');
-  setProgress(0, fileHandles.length);
-  log(`${fileHandles.length} files discovered`);
-
-  const caseInsensitive = caseInsensitiveCheckbox.checked;
-  const copyMatched = copyFilesToggle.checked;
-
-  // initialize found map
-  const foundMap = {};
-  templateWords.forEach(w => foundMap[w] = []);
-
-  let checked = 0;
-  let copiedCount = 0;
-
-  for (const f of fileHandles) {
-    if (cancelRequested) break;
-    checked++;
-    try {
-      const nameNorm = caseInsensitive ? f.handle.name.toLowerCase() : f.handle.name;
-      templateWords.forEach(w => {
-        const term = caseInsensitive ? w.toLowerCase() : w;
-        if (nameNorm.includes(term)) foundMap[w].push(`${sourceHandle.name}/${f.path}`);
-      });
-
-      // PDF first page check
-      if (f.handle.name.toLowerCase().endsWith('.pdf')) {
-        try {
-          const file = await f.handle.getFile();
-          const ab = await file.arrayBuffer();
-          const pdf = await pdfjsLib.getDocument({ data: ab }).promise;
-          if (pdf.numPages >= 1) {
-            const page = await pdf.getPage(1);
-            const txt = await page.getTextContent();
-            const pageText = txt.items.map(i => i.str).join(' ');
-            templateWords.forEach(w => {
-              const term = caseInsensitive ? w.toLowerCase() : w;
-              if ((caseInsensitive ? pageText.toLowerCase() : pageText).includes(term)) foundMap[w].push(`${sourceHandle.name}/${f.path}`);
-            });
-          }
-        } catch { /* ignore PDF parse errors */ }
-      }
-
-      // copy matched files
-      if (copyMatched) {
-        const matched = templateWords.some(w => foundMap[w].includes(`${sourceHandle.name}/${f.path}`));
-        if (matched) {
-          try {
-            const targetHandle = await ensurePathAndGetHandle(destHandle, f.path);
-            const arrayBuffer = await (await f.handle.getFile()).arrayBuffer();
-            const writable = await targetHandle.createWritable();
-            await writable.write(arrayBuffer); await writable.close();
-            copiedCount++;
-          } catch {}
-        }
-      }
-
-    } catch (err) { log(`Error scanning ${f.path}: ${err.message || err}`); }
-    if (checked % 5 === 0 || checked === fileHandles.length) setProgress(checked, fileHandles.length);
-  }
-
-  if (cancelRequested) { setStatus('Cancelled'); log('Operation cancelled'); Swal.fire({icon:'warning',title:'Cancelled'}); }
-  else { setStatus('Completed'); log(`Search finished. Files copied: ${copiedCount}`); Swal.fire({icon:'success',title:'Search Finished'}); }
-
-  // Generate report
-  const rows = [['searchword','result','where_found']];
-  reportPreview.innerHTML = '';
-  templateWords.forEach(w => {
-    const locs = [...new Set(foundMap[w])];
-    rows.push([w, locs.length ? 'FOUND':'NOT FOUND', locs.join(' ; ')]);
-    const div = document.createElement('div');
-    div.className = 'p-2 border-b border-slate-200 dark:border-slate-700';
-    div.innerHTML = `<div class="font-bold">${w}</div><div class="text-xs text-slate-600 dark:text-slate-400">${locs.join(' ; ') || '-'}</div>`;
-    reportPreview.appendChild(div);
-  });
-
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  XLSX.utils.book_append_sheet(wb, ws, 'report');
-  const wbout = XLSX.write(wb, {bookType:'xlsx', type:'array'});
-
-  const blob = new Blob([wbout], {type:'application/octet-stream'});
-  lastReportBlobUrl && URL.revokeObjectURL(lastReportBlobUrl);
-  lastReportBlobUrl = URL.createObjectURL(blob);
-  lastReportName = `search_report_${new Date().toISOString().slice(0,10)}.xlsx`;
-  downloadReportBtn.disabled = false;
-
-  // save to destination
-  try {
-    const fileHandle = await destHandle.getFileHandle('search_report.xlsx', {create:true});
-    const writable = await fileHandle.createWritable();
-    await writable.write(wbout); await writable.close();
-    log('Report saved to destination folder');
-  } catch { log('Could not save report to destination; use Download Report'); }
-  setProgress(fileHandles.length, fileHandles.length);
 });
 
-// ------------------- Helper Functions -------------------
-
-async function ensurePathAndGetHandle(rootDirHandle, filePath) {
-  const parts = filePath.split('/');
-  const fileName = parts.pop();
-  let curr = rootDirHandle;
-  for (const p of parts) curr = await curr.getDirectoryHandle(p, {create:true});
-  return await curr.getFileHandle(fileName, {create:true});
-}
-
-// ------------------- UI Event Listeners -------------------
-
-clearLogBtn.addEventListener('click', clearLog);
+templateInput.addEventListener('change', (e) => {
+  const f = e.target.files[0];
+  if (f) loadXlsxFile(f);
+});
 
 clearTemplateBtn.addEventListener('click', () => {
   templateInput.value = '';
@@ -311,48 +137,272 @@ clearTemplateBtn.addEventListener('click', () => {
   previewWrap.classList.add('hidden');
   exportTemplateBtn.disabled = true;
   clearTemplateBtn.classList.add('hidden');
-  templateTableWrap.innerHTML = '';
-  Swal.fire({ icon: 'success', title: 'Template cleared' });
-  log('Template cleared');
+  log('Template cleared by user');
 });
 
+// Sample template generator
 downloadSampleBtn.addEventListener('click', () => {
-  const rows = [['searchword'],[''],[''],['']];
+  const rows = [
+    ['searchword'],
+    ['AMI000001'],
+    ['AMI000002'],
+    ['AMI000100'],
+  ];
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(rows);
   XLSX.utils.book_append_sheet(wb, ws, 'template');
-  const out = XLSX.write(wb, {bookType:'xlsx', type:'array'});
-  const blob = new Blob([out], {type:'application/octet-stream'});
+  const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([out], { type: 'application/octet-stream' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = 'template_sample.xlsx';
-  document.body.appendChild(a); a.click(); a.remove();
+  a.href = url;
+  a.download = 'template_sample.xlsx';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
   URL.revokeObjectURL(url);
-  Swal.fire({icon:'success',title:'Sample downloaded'});
   log('Sample template downloaded');
 });
 
+// Export loaded template (re-create xlsx from templateWords)
 exportTemplateBtn.addEventListener('click', () => {
   if (!templateWords.length) return;
-  const rows = [['searchword'], ...templateWords.map(w=>[w])];
+  const rows = [['searchword'], ...templateWords.map(w => [w])];
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(rows);
   XLSX.utils.book_append_sheet(wb, ws, 'template');
-  const out = XLSX.write(wb, {bookType:'xlsx', type:'array'});
-  const blob = new Blob([out], {type:'application/octet-stream'});
+  const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([out], { type: 'application/octet-stream' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = `template_export_${new Date().toISOString().slice(0,10)}.xlsx`;
-  document.body.appendChild(a); a.click(); a.remove();
+  a.href = url;
+  a.download = `template_export_${new Date().toISOString().slice(0,10)}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
   URL.revokeObjectURL(url);
-  Swal.fire({icon:'success',title:'Template exported'});
-  log('Template exported');
+  log('Template exported (download)');
 });
 
-cancelBtn.addEventListener('click', () => { cancelRequested=true; setStatus('Cancelling...'); Swal.fire({icon:'warning',title:'Cancelling'}); log('Cancel requested'); });
-downloadReportBtn.addEventListener('click', () => {
-  if (!lastReportBlobUrl) return Swal.fire({icon:'warning',title:'No report available'});
-  const a = document.createElement('a');
-  a.href = lastReportBlobUrl; a.download = lastReportName; document.body.appendChild(a); a.click(); a.remove();
-  log('Report downloaded by user');
+// --- Folder pickers (File System Access API) ---
+chooseSourceBtn.addEventListener('click', async () => {
+  try {
+    sourceHandle = await window.showDirectoryPicker();
+    sourceInfo.textContent = `Source: ${sourceHandle.name}`;
+    log(`Source folder selected: ${sourceHandle.name}`);
+  } catch (err) {
+    log('Source selection canceled.');
+  }
 });
+
+chooseDestBtn.addEventListener('click', async () => {
+  try {
+    destHandle = await window.showDirectoryPicker();
+    destInfo.textContent = `Destination: ${destHandle.name}`;
+    log(`Destination folder selected: ${destHandle.name}`);
+  } catch (err) {
+    log('Destination selection canceled.');
+  }
+});
+
+// --- Control buttons ---
+cancelBtn.addEventListener('click', () => {
+  cancelRequested = true;
+  setStatus('Cancelling...');
+  log('Cancel requested');
+});
+
+clearLogBtn.addEventListener('click', clearLog);
+
+// Download report button fallback
+downloadReportBtn.addEventListener('click', () => {
+  if (!lastReportBlobUrl) {
+    alert('No report available to download.');
+    return;
+  }
+  const a = document.createElement('a');
+  a.href = lastReportBlobUrl;
+  a.download = lastReportName || 'search_report.xlsx';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  log('Report downloaded (fallback)');
+});
+
+// --- Core search logic ---
+startBtn.addEventListener('click', async () => {
+  if (!templateWords.length) {
+    alert('Please upload an Excel template (.xlsx) with searchwords in the first column.');
+    return;
+  }
+  if (!sourceHandle) {
+    alert('Please choose a source folder.');
+    return;
+  }
+  if (!destHandle) {
+    alert('Please choose a destination folder.');
+    return;
+  }
+
+  cancelRequested = false;
+  setStatus('Preparing...');
+  log('Search started');
+
+  // Build found map
+  const foundMap = {};
+  for (const w of templateWords) foundMap[w] = [];
+
+  // Collect file handles
+  const fileHandles = [];
+  async function traverse(dirHandle, basePath = '') {
+    for await (const [name, handle] of dirHandle.entries()) {
+      if (cancelRequested) return;
+      const entryPath = basePath ? `${basePath}/${name}` : name;
+      if (handle.kind === 'file') {
+        fileHandles.push({ handle, path: entryPath });
+      } else if (handle.kind === 'directory') {
+        await traverse(handle, entryPath);
+      }
+    }
+  }
+
+  await traverse(sourceHandle);
+  log(`${fileHandles.length} files discovered`);
+
+  let checked = 0;
+  setProgress(checked, fileHandles.length);
+  setStatus('Scanning files...');
+  const caseInsensitive = caseInsensitiveCheckbox.checked;
+  const norm = s => caseInsensitive ? s.toLowerCase() : s;
+
+  const copyMatched = copyFilesToggle.checked;
+  let copiedCount = 0;
+
+  for (const fileEntry of fileHandles) {
+    if (cancelRequested) break;
+    const { handle, path } = fileEntry;
+    checked++;
+    try {
+      const name = handle.name;
+      const nameToTest = norm(name);
+
+      for (const w of templateWords) {
+        const testWord = norm(w);
+        if (nameToTest.includes(testWord)) {
+          foundMap[w].push(`FILENAME: ${path}`);
+        }
+      }
+
+      if (name.toLowerCase().endsWith('.pdf')) {
+        try {
+          const file = await handle.getFile();
+          const ab = await file.arrayBuffer();
+          const pdf = await pdfjsLib.getDocument({ data: ab }).promise;
+          if (pdf.numPages >= 1) {
+            const page = await pdf.getPage(1);
+            const txt = await page.getTextContent();
+            const pageText = txt.items.map(i => i.str).join(' ');
+            const textToTest = norm(pageText);
+            for (const w of templateWords) {
+              const testWord = norm(w);
+              if (textToTest.includes(testWord)) {
+                foundMap[w].push(`PDF_FIRST_PAGE: ${path}`);
+              }
+            }
+            page.cleanup && page.cleanup();
+          }
+          pdf.cleanup && pdf.cleanup();
+        } catch (pdfErr) {
+          log(`PDF parse error (${path}): ${pdfErr.message || pdfErr}`);
+        }
+      }
+
+      // Optional copy matched files to destination
+      if (copyMatched) {
+        // If any word matched in filename or PDF first page (foundMap... contains entries)
+        const matched = templateWords.some(w => foundMap[w].some(loc => loc.endsWith(path)));
+        if (matched) {
+          // copy file into dest preserving folder name
+          try {
+            const targetHandle = await ensurePathAndGetHandle(destHandle, path);
+            const srcFile = await handle.getFile();
+            const writable = await targetHandle.createWritable();
+            await writable.write(await srcFile.arrayBuffer());
+            await writable.close();
+            copiedCount++;
+            log(`Copied matched file: ${path}`);
+          } catch (copyErr) {
+            log(`Failed copying ${path}: ${copyErr.message || copyErr}`);
+          }
+        }
+      }
+    } catch (err) {
+      log(`Error scanning ${path}: ${err.message || err}`);
+    }
+
+    if (checked % 5 === 0 || checked === fileHandles.length) {
+      setProgress(checked, fileHandles.length);
+    }
+  }
+
+  if (cancelRequested) {
+    setStatus('Cancelled');
+    log('Operation cancelled by user');
+  } else {
+    setStatus('Completed');
+    log('Scanning finished');
+  }
+
+  // Build rows for report
+  const rows = [];
+  rows.push(['searchword', 'result', 'where_found']);
+  for (const w of templateWords) {
+    const locations = [...new Set(foundMap[w])];
+    const result = locations.length ? 'FOUND' : 'NOT FOUND';
+    const where = locations.join(' ; ');
+    rows.push([w, result, where]);
+  }
+
+  // Create workbook
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  XLSX.utils.book_append_sheet(wb, ws, 'report');
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+
+  // Try to save to dest folder; fallback to download
+  try {
+    const fileHandle = await destHandle.getFileHandle('search_report.xlsx', { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(wbout);
+    await writable.close();
+    log('Report saved to destination: search_report.xlsx');
+    setStatus('Report saved');
+    downloadReportBtn.disabled = false;
+    lastReportBlobUrl = null;
+  } catch (saveErr) {
+    log('Saving to destination failed; creating fallback download.');
+    const blob = new Blob([wbout], { type: 'application/octet-stream' });
+    if (lastReportBlobUrl) URL.revokeObjectURL(lastReportBlobUrl);
+    lastReportBlobUrl = URL.createObjectURL(blob);
+    lastReportName = 'search_report.xlsx';
+    downloadReportBtn.disabled = false;
+    setStatus('Report ready to download');
+    log('Use "Download Report" to save the file.');
+  }
+
+  // Final progress
+  setProgress(fileHandles.length, fileHandles.length);
+  log(`Search completed. Files checked: ${fileHandles.length}. Matches copied: ${copiedCount}`);
+});
+
+// helper: ensure nested path exists and return file handle for writing that file
+async function ensurePathAndGetHandle(rootDirHandle, filePath) {
+  // filePath could be like "a/b/c.pdf" or just "c.pdf"
+  const parts = filePath.split('/');
+  const fileName = parts.pop();
+  let curr = rootDirHandle;
+  for (const p of parts) {
+    curr = await curr.getDirectoryHandle(p, { create: true });
+  }
+  return await curr.getFileHandle(fileName, { create: true });
+}

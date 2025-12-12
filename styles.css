@@ -1,0 +1,47 @@
+/* styles.css - custom enhancements */
+
+/* Buttons using Tailwind classes; these utility classes are used in HTML.
+   Add small helper components here. */
+
+:root {
+  --glass: rgba(255,255,255,0.7);
+  --glass-dark: rgba(17,24,39,0.6);
+}
+
+/* Button variants */
+.btn {
+  @apply inline-flex items-center justify-center rounded-md font-medium transition;
+  padding: 0.5rem 0.9rem;
+}
+.btn-primary {
+  @apply bg-indigo-600 text-white shadow hover:bg-indigo-700;
+}
+.btn-secondary {
+  @apply bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:shadow;
+}
+.btn-ghost {
+  @apply bg-transparent border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700;
+}
+
+/* Drop area hover */
+#dropArea:hover {
+  border-color: rgba(99,102,241,0.5);
+}
+
+/* Log style */
+#log {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", monospace;
+  font-size: 12px;
+  color: #0f172a;
+}
+
+/* Dark mode adjustments for log color */
+@media (prefers-color-scheme: dark) {
+  #log { color: #e6eef8; }
+}
+
+/* small responsive */
+@media (max-width: 640px) {
+  .rounded-3xl { padding: 1rem; }
+  .max-w-5xl { padding: 0.6rem; }
+}
